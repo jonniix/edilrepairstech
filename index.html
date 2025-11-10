@@ -1,6 +1,13 @@
 <!DOCTYPE html>
 <html lang="it" data-theme="dark">
 <head>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script>
+  const SUPABASE_URL = "https://cvmniyociytwlagyfwed.supabase.co";
+  const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImN2bW5peW9jaXl0d2xhZ3lmd2VkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjI4MDg4NjMsImV4cCI6MjA3ODM4NDg2M30.gy90vkwY2UV3QYpk1OL9s_9XumfLW1nSTqKiglpc9UA";
+
+  window.supabase = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+</script>
 <script>
   (function(){
     try{
