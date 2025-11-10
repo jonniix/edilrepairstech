@@ -1,0 +1,480 @@
+<!DOCTYPE html>
+<html lang="it" data-theme="dark">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Area Collaboratori · Gestione Cantieri</title>
+  <link id="dynamic-favicon" rel="icon" href="">
+  <style>
+    :root{
+      --bg:#0b1320; --panel:#0f1a2c; --card:#111d31; --muted:#a8b8cc; --text:#e8eef6;
+      --border:#1e2b45; --accent:#4da3ff; --success:#22c55e; --danger:#ef4444; --radius:16px;
+      --shadow:0 12px 28px rgba(0,0,0,.35); --input-bg:#0f1a2c; --input-border:#223353; --input-focus:#4da3ff33;
+    }
+    html[data-theme="light"]{
+      --bg:#f3f6fb; --panel:#fff; --card:#fff; --text:#0b1220; --muted:#475569;
+      --border:#c7d2e2; --accent:#1d4ed8; --success:#15803d; --danger:#dc2626; --shadow:0 10px 28px rgba(2,6,23,.08);
+      --input-bg:#fff; --input-border:#c7d2e2; --input-focus:#1d4ed822;
+    }
+    *{box-sizing:border-box} html,body{height:100%}
+    body{margin:0;font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Arial,sans-serif;background:var(--bg);color:var(--text);}
+    .topbar{display:flex;align-items:center;justify-content:space-between;padding:12px 16px;border-bottom:1px solid var(--border);background:var(--card);position:sticky;top:0;z-index:10}
+    .brand{display:flex;align-items:center;gap:.8rem}
+    .logo{width:40px;height:40px;border-radius:10px;border:1px solid var(--border);background:var(--panel);display:grid;place-items:center;overflow:hidden}
+    .logo img{width:100%;height:100%;object-fit:contain}
+    .title{font-size:1.05rem;font-weight:900;margin:0}
+    .muted{color:var(--muted)}
+    .wrap{padding:16px;display:grid;gap:16px;max-width:1100px;margin:0 auto}
+    .tabs{display:flex;gap:8px;flex-wrap:wrap}
+    .tabbtn{border:1px solid var(--border);background:var(--panel);color:var(--text);padding:.6rem .9rem;border-radius:999px;cursor:pointer;font-weight:800}
+    .tabbtn.active{background:linear-gradient(135deg,var(--accent),#3b82d2);color:#fff}
+    .card{background:var(--card);border:1px solid var(--border);border-radius:16px;box-shadow:var(--shadow);padding:16px}
+    label{font-size:.9rem;color:var(--muted);font-weight:700;display:block;margin:.35rem 0}
+    input,select,textarea{width:100%;padding:.85rem 1rem;border-radius:12px;border:1px solid var(--input-border);background:var(--input-bg);color:var(--text);outline:none;transition:.15s}
+    input:focus,select:focus,textarea:focus{box-shadow:0 0 0 4px var(--input-focus);border-color:var(--accent)}
+    textarea{min-height:120px;resize:vertical}
+    .row{display:grid;gap:12px}
+    @media(min-width:860px){ .row.two{grid-template-columns:1fr 1fr} .row.three{grid-template-columns:1fr 1fr 1fr} }
+    .btn{border:none;cursor:pointer;font-weight:800;padding:.85rem 1rem;border-radius:12px}
+    .btn-primary{background:linear-gradient(135deg,var(--accent),#3b82d2);color:#fff}
+    .btn-ghost{background:transparent;border:1px solid var(--border);color:var(--text)}
+    .btn-danger{background:linear-gradient(135deg,var(--danger),#e14242);color:#fff}
+    .list{display:grid;gap:8px}
+    .item{border:1px solid var(--border);border-radius:12px;background:var(--panel);padding:.7rem .8rem}
+    .pill{display:inline-flex;align-items:center;gap:.35rem;border:1px solid var(--border);background:var(--panel);border-radius:999px;padding:.15rem .55rem;font-weight:700}
+    .right{display:flex;gap:8px;align-items:center}
+    .switch{width:52px;height:28px;border-radius:999px;background:var(--panel);border:1px solid var(--border);position:relative;cursor:pointer}
+    .switch::after{content:"";position:absolute;top:3px;left:3px;width:22px;height:22px;border-radius:999px;background:var(--card);border:1px solid var(--border);transition:left .2s}
+    html[data-theme="light"] .switch::after{left:27px}
+    .toast{position:fixed;right:16px;bottom:16px;padding:.8rem 1rem;border:1px solid var(--border);background:var(--panel);border-radius:12px;opacity:0;transform:translateY(8px);transition:.2s;z-index:9999}
+    .toast.show{opacity:1;transform:none}
+    .table{width:100%;border-collapse:collapse}
+    .table th,.table td{border-bottom:1px solid var(--border);padding:.5rem .4rem;text-align:left}
+    .table th{font-size:.85rem;color:var(--muted);font-weight:800}
+    .sep{height:1px;background:var(--border);margin:10px 0}
+    /* user menu (coerente con app) */
+    .user-menu{position:relative;display:inline-block}
+    .user-chip{display:flex;align-items:center;gap:.6rem;border:1px solid var(--border);
+      background:var(--panel);padding:.45rem .7rem;border-radius:999px;cursor:pointer}
+    .user-chip .avatar{width:26px;height:26px;border-radius:999px;background:var(--card);
+      display:grid;place-items:center;border:1px solid var(--border)}
+    .user-chip .user-label{display:flex;flex-direction:column;line-height:1}
+    .user-chip .user-label b{font-size:.92rem}
+    .user-chip .user-label small{font-size:.72rem;color:var(--muted)}
+    .user-chip .chev{font-size:.9rem;opacity:.8}
+    .menu{position:absolute;right:0;top:calc(100% + 8px);min-width:220px;background:var(--card);
+      border:1px solid var(--border);border-radius:14px;box-shadow:var(--shadow);padding:.35rem;display:none;z-index:30}
+    .menu.show{display:block}
+    .menu .item{width:100%;text-align:left;border:none;background:transparent;color:var(--text);
+      padding:.6rem .7rem;border-radius:10px;cursor:pointer}
+    .menu .item:hover{background:var(--panel)}
+    .menu .item.danger{color:#fff;background:linear-gradient(135deg,var(--danger),#e14242)}
+  </style>
+</head>
+<body>
+  <!-- Topbar -->
+  <div class="topbar">
+    <div class="brand">
+      <div class="logo"><img id="logo" alt="logo"></div>
+      <div>
+        <div class="title">Area Collaboratori</div>
+        <div class="muted">Gestione Cantieri</div>
+      </div>
+    </div>
+    <div class="right">
+      <div class="user-menu">
+        <button id="user-menu-btn" class="btn-ghost user-chip" aria-haspopup="menu" aria-expanded="false">
+          <span class="avatar" aria-hidden="true">👤</span>
+          <span class="user-label">
+            <b id="um-username">utente</b>
+            <small id="um-role" class="muted">collaboratore</small>
+          </span>
+          <span class="chev">▾</span>
+        </button>
+        <div id="user-menu-pop" class="menu" role="menu" aria-hidden="true">
+          <button class="item" id="um-profile" role="menuitem">Profilo</button>
+          <div class="sep"></div>
+          <button class="item danger" id="btn-logout" role="menuitem">🚪 Logout</button>
+        </div>
+      </div>
+      <div title="Tema" id="theme-switch" class="switch" aria-label="Cambia tema"></div>
+    </div>
+  </div>
+
+  <div class="wrap">
+    <!-- Tabs -->
+    <div class="tabs">
+      <button class="tabbtn active" data-tab="t-ticket">Ticket</button>
+      <button class="tabbtn" data-tab="t-schedule">Programma di lavoro</button>
+      <button class="tabbtn" data-tab="t-archive">Archivio personale</button>
+    </div>
+
+    <!-- Ticket -->
+    <section id="t-ticket" class="card">
+      <h2 class="title" style="margin-top:0">Invia nuovo ticket</h2>
+      <div class="row two">
+        <div>
+          <label>Titolo</label>
+          <input id="tk-title" placeholder="es. Guasto impianto, Servizio, ecc." />
+        </div>
+        <div>
+          <label>Priorità</label>
+          <select id="tk-priority">
+            <option value="media">Media</option>
+            <option value="alta">Alta</option>
+            <option value="bassa">Bassa</option>
+          </select>
+        </div>
+      </div>
+      <div class="row two">
+        <div>
+          <label>Cliente</label>
+          <input id="tk-customer" placeholder="Ragione sociale o nome" />
+        </div>
+        <div>
+          <label>Cantiere</label>
+          <input id="tk-site" placeholder="codice/nome cantiere" />
+        </div>
+      </div>
+      <div class="row three">
+        <div>
+          <label>Categoria</label>
+          <input id="tk-category" placeholder="es. elettrico, idraulico…" />
+        </div>
+        <div>
+          <label>Scadenza</label>
+          <input id="tk-due" type="date" />
+        </div>
+        <div>
+          <label>Ore stimate</label>
+          <input id="tk-eta" type="number" min="0" step="0.5" placeholder="0" />
+        </div>
+      </div>
+      <div>
+        <label>Descrizione</label>
+        <textarea id="tk-desc" placeholder="Dettagli del problema o richiesta"></textarea>
+      </div>
+      <div class="sep"></div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn btn-primary" id="btn-send-ticket">Invia ticket</button>
+        <button class="btn btn-ghost" id="btn-clear-ticket">Pulisci</button>
+      </div>
+
+      <div class="sep"></div>
+
+      <h3 class="title" style="font-size:1.05rem;margin:.2rem 0 .5rem">Ticket inviati (solo tuo profilo)</h3>
+      <div class="list" id="my-tickets"></div>
+    </section>
+
+    <!-- Programma di lavoro -->
+    <section id="t-schedule" class="card" style="display:none">
+      <h2 class="title" style="margin-top:0">Programma di lavoro</h2>
+      <div class="row three">
+        <div>
+          <label>Data</label>
+          <input id="sc-date" type="date" />
+        </div>
+        <div>
+          <label>Orario</label>
+          <input id="sc-time" type="time" />
+        </div>
+        <div>
+          <label>Durata (h)</label>
+          <input id="sc-dur" type="number" min="0" step="0.5" placeholder="4" />
+        </div>
+      </div>
+      <div>
+        <label>Attività</label>
+        <input id="sc-task" placeholder="es. sopralluogo cantiere A" />
+      </div>
+      <div class="sep"></div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn btn-primary" id="btn-add-slot">Aggiungi</button>
+        <button class="btn btn-ghost" id="btn-clear-slots">Svuota</button>
+      </div>
+      <div class="sep"></div>
+      <table class="table" id="schedule-table">
+        <thead><tr><th>Data</th><th>Ora</th><th>Durata</th><th>Attività</th><th></th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </section>
+
+    <!-- Archivio personale -->
+    <section id="t-archive" class="card" style="display:none">
+      <h2 class="title" style="margin-top:0">Archivio personale</h2>
+      <div class="row two">
+        <div>
+          <label>Titolo nota</label>
+          <input id="ar-title" placeholder="es. Materiali da ordinare" />
+        </div>
+        <div>
+          <label>Tag</label>
+          <input id="ar-tags" placeholder="es. magazzino, urgenza" />
+        </div>
+      </div>
+      <div>
+        <label>Contenuto</label>
+        <textarea id="ar-body" placeholder="Scrivi qui la tua nota personale"></textarea>
+      </div>
+      <div class="sep"></div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn btn-primary" id="btn-add-note">Salva nota</button>
+        <button class="btn btn-ghost" id="btn-clear-notes">Svuota</button>
+      </div>
+      <div class="sep"></div>
+      <div class="list" id="notes-list"></div>
+    </section>
+  </div>
+
+  <div id="toast" class="toast"></div>
+
+<script>
+/* ===== CHIAVI STORAGE CONDIVISE ===== */
+const AUTH_KEY = 'gc_auth_user';
+const AUDIT_KEY = 'gc_audit_v1';
+const IDB_DB='gc_store', IDB_STORE='state', IDB_KEY='gestione-cantieri';
+const TICKET_INBOX_KEY = 'gc_ticket_inbox_v1';  // coda condivisa con l’app
+const MY_TK_KEY = (u)=> `gc_collab_${u}_tickets`;
+const SC_KEY    = (u)=> `gc_collab_${u}_schedule`;
+const AR_KEY    = (u)=> `gc_collab_${u}_archive`;
+
+const $ = (id)=> document.getElementById(id);
+const showToast=(m)=>{ const t=$('toast'); t.textContent=m; t.classList.add('show'); setTimeout(()=>t.classList.remove('show'),2200); };
+
+/* ===== Tema + Logo da settings ===== */
+(function theme(){
+  const saved = localStorage.getItem('theme') || 'dark';
+  document.documentElement.setAttribute('data-theme', saved);
+  $('theme-switch')?.addEventListener('click', ()=>{
+    const t = document.documentElement.getAttribute('data-theme');
+    const next = t==='light'?'dark':'light';
+    document.documentElement.setAttribute('data-theme', next);
+    localStorage.setItem('theme', next);
+  });
+})();
+function idbOpen(){
+  return new Promise((res,rej)=>{
+    const rq = indexedDB.open(IDB_DB,1);
+    rq.onupgradeneeded = ()=>{ const db=rq.result; if(!db.objectStoreNames.contains(IDB_STORE)) db.createObjectStore(IDB_STORE); };
+    rq.onsuccess = ()=> res(rq.result);
+    rq.onerror = ()=> rej(rq.error);
+  });
+}
+async function idbGet(key){
+  try{
+    const db = await idbOpen();
+    return await new Promise((res,rej)=>{
+      const tx = db.transaction(IDB_STORE,'readonly');
+      const rq = tx.objectStore(IDB_STORE).get(key);
+      rq.onsuccess = ()=> res(rq.result ?? null);
+      rq.onerror = ()=> rej(rq.error);
+    });
+  }catch{ return null; }
+}
+async function loadLogo(){
+  const state = await idbGet(IDB_KEY);
+  const dataUrl = state?.settings?.logoDataUrl || '';
+  if(dataUrl){ $('logo').src = dataUrl; $('dynamic-favicon').href = dataUrl; }
+}
+
+/* ===== Sessione obbligatoria + role check ===== */
+function getSession(){
+  try { return JSON.parse(localStorage.getItem(AUTH_KEY)||'null'); } catch { return null; }
+}
+function ensureRole(){
+  const s = getSession();
+  if(!s){ location.replace('login.html'); return null; }
+  if(s.role!=='collaboratore'){ location.replace('index.html'); return null; }
+  return s;
+}
+
+/* ===== Audit helper ===== */
+function audit(detail){
+  try{
+    const s=getSession(); if(!s) return;
+    const list = JSON.parse(localStorage.getItem(AUDIT_KEY)||'[]');
+    list.unshift({ ts:new Date().toISOString(), user:s.username, type:'other', detail });
+    localStorage.setItem(AUDIT_KEY, JSON.stringify(list));
+  }catch(_){}
+}
+
+/* ===== Tabs ===== */
+document.querySelectorAll('.tabbtn').forEach(b=>{
+  b.addEventListener('click', ()=>{
+    document.querySelectorAll('.tabbtn').forEach(x=>x.classList.remove('active'));
+    document.querySelectorAll('section.card').forEach(x=>x.style.display='none');
+    b.classList.add('active');
+    $(b.dataset.tab).style.display='';
+  });
+});
+
+/* ===== Ticket ===== */
+function readInbox(){ try{ return JSON.parse(localStorage.getItem(TICKET_INBOX_KEY)||'[]'); }catch{return []} }
+function writeInbox(a){ localStorage.setItem(TICKET_INBOX_KEY, JSON.stringify(a)); }
+function readMyTk(user){ try{ return JSON.parse(localStorage.getItem(MY_TK_KEY(user))||'[]'); }catch{return []} }
+function writeMyTk(user,a){ localStorage.setItem(MY_TK_KEY(user), JSON.stringify(a)); }
+
+function renderMyTickets(user){
+  const box = $('my-tickets');
+  const arr = readMyTk(user);
+  if(!arr.length){ box.innerHTML = '<div class="muted">Nessun ticket inviato</div>'; return; }
+  box.innerHTML = arr.map(t=>`
+    <div class="item">
+      <div style="display:flex;justify-content:space-between;gap:.5rem;align-items:center">
+        <div><b>${t.title}</b> · <span class="pill">${t.priority}</span></div>
+        <small class="muted">${new Date(t.ts).toLocaleString()}</small>
+      </div>
+      <div class="muted" style="margin:.2rem 0">${t.customer||''} ${t.site? '· '+t.site:''} ${t.category? '· '+t.category:''}</div>
+      <div>${(t.desc||'').replace(/\n/g,'<br>')}</div>
+      ${t.due? `<div class="muted">Scadenza: ${t.due}</div>`:''}
+    </div>
+  `).join('');
+}
+
+$('btn-send-ticket').addEventListener('click', ()=>{
+  const s = getSession(); if(!s) return;
+  const t = {
+    id: 'tk_' + Math.random().toString(36).slice(2),
+    title: $('tk-title').value.trim(),
+    priority: $('tk-priority').value,
+    customer: $('tk-customer').value.trim(),
+    site: $('tk-site').value.trim(),
+    category: $('tk-category').value.trim(),
+    due: $('tk-due').value || null,
+    eta: parseFloat($('tk-eta').value || '0') || 0,
+    desc: $('tk-desc').value.trim(),
+    createdBy: s.username,
+    role: s.role,
+    ts: new Date().toISOString(),
+    status: 'inbox' // da approvare dall’operatore
+  };
+  if(!t.title){ showToast('Inserisci un titolo'); return; }
+
+  // Scrive nella coda condivisa (visibile all’app)
+  const inbox = readInbox(); inbox.unshift(t); writeInbox(inbox);
+
+  // Copia anche nel proprio archivio ticket (solo consultazione)
+  const my = readMyTk(s.username); my.unshift(t); writeMyTk(s.username, my);
+
+  // Audit
+  audit('collaboratore: nuovo ticket inviato – '+t.title);
+
+  // Pulizia form + UI
+  $('tk-title').value=''; $('tk-customer').value=''; $('tk-site').value='';
+  $('tk-category').value=''; $('tk-due').value=''; $('tk-eta').value=''; $('tk-desc').value='';
+  renderMyTickets(s.username);
+  showToast('Ticket inviato. L’operatore lo vedrà nella Inbox.');
+});
+
+$('btn-clear-ticket').addEventListener('click', ()=>{
+  ['tk-title','tk-customer','tk-site','tk-category','tk-due','tk-eta','tk-desc'].forEach(id=>{ const el=$(id); if(el) el.value=''; });
+});
+
+/* ===== Programma di lavoro ===== */
+function readSchedule(u){ try{ return JSON.parse(localStorage.getItem(SC_KEY(u))||'[]'); }catch{return []} }
+function writeSchedule(u,a){ localStorage.setItem(SC_KEY(u), JSON.stringify(a)); }
+function renderSchedule(u){
+  const tb = $('schedule-table').querySelector('tbody');
+  const arr = readSchedule(u);
+  tb.innerHTML = arr.map((r,i)=>`
+    <tr>
+      <td>${r.date||''}</td><td>${r.time||''}</td><td>${r.dur||''}</td><td>${r.task||''}</td>
+      <td style="text-align:right"><button class="btn btn-ghost" data-i="${i}" data-act="rm">Elimina</button></td>
+    </tr>
+  `).join('') || '<tr><td colspan="5" class="muted">Nessuna voce</td></tr>';
+  tb.querySelectorAll('[data-act="rm"]').forEach(b=>{
+    b.addEventListener('click', ()=>{
+      const i = +b.dataset.i; const a = readSchedule(u); a.splice(i,1); writeSchedule(u,a); renderSchedule(u);
+    });
+  });
+}
+$('btn-add-slot').addEventListener('click', ()=>{
+  const s=getSession(); if(!s) return;
+  const rec = { date:$('sc-date').value, time:$('sc-time').value, dur:$('sc-dur').value, task:$('sc-task').value.trim() };
+  const a = readSchedule(s.username); a.unshift(rec); writeSchedule(s.username,a); renderSchedule(s.username);
+  ['sc-date','sc-time','sc-dur','sc-task'].forEach(id=>$(id).value='');
+});
+$('btn-clear-slots').addEventListener('click', ()=>{
+  const s=getSession(); if(!s) return;
+  if(!confirm('Svuotare il programma di lavoro?')) return;
+  writeSchedule(s.username,[]); renderSchedule(s.username);
+});
+
+/* ===== Archivio personale ===== */
+function readNotes(u){ try{ return JSON.parse(localStorage.getItem(AR_KEY(u))||'[]'); }catch{return []} }
+function writeNotes(u,a){ localStorage.setItem(AR_KEY(u), JSON.stringify(a)); }
+function renderNotes(u){
+  const box = $('notes-list');
+  const arr = readNotes(u);
+  if(!arr.length){ box.innerHTML='<div class="muted">Nessuna nota</div>'; return; }
+  box.innerHTML = arr.map((n,i)=>`
+    <div class="item">
+      <div style="display:flex;justify-content:space-between;gap:.5rem;align-items:center">
+        <div><b>${n.title||'Senza titolo'}</b> ${n.tags?'<span class="pill">'+n.tags+'</span>':''}</div>
+        <div style="display:flex;gap:6px">
+          <button class="btn btn-ghost" data-i="${i}" data-act="edit">Modifica</button>
+          <button class="btn btn-danger" data-i="${i}" data-act="del">Elimina</button>
+        </div>
+      </div>
+      <div class="muted" style="margin:.2rem 0">${new Date(n.ts).toLocaleString()}</div>
+      <div>${(n.body||'').replace(/\n/g,'<br>')}</div>
+    </div>
+  `).join('');
+  box.querySelectorAll('[data-act="del"]').forEach(b=>{
+    b.addEventListener('click', ()=>{
+      const s=getSession(); const i=+b.dataset.i; const a=readNotes(s.username); a.splice(i,1); writeNotes(s.username,a); renderNotes(s.username);
+    });
+  });
+  box.querySelectorAll('[data-act="edit"]').forEach(b=>{
+    b.addEventListener('click', ()=>{
+      const s=getSession(); const i=+b.dataset.i; const a=readNotes(s.username); const n=a[i];
+      $('ar-title').value=n.title||''; $('ar-tags').value=n.tags||''; $('ar-body').value=n.body||'';
+      a.splice(i,1); writeNotes(s.username,a); renderNotes(s.username);
+    });
+  });
+}
+$('btn-add-note').addEventListener('click', ()=>{
+  const s=getSession(); if(!s) return;
+  const n={ title:$('ar-title').value.trim(), tags:$('ar-tags').value.trim(), body:$('ar-body').value.trim(), ts:new Date().toISOString() };
+  const a=readNotes(s.username); a.unshift(n); writeNotes(s.username,a); renderNotes(s.username);
+  ['ar-title','ar-tags','ar-body'].forEach(id=>$(id).value='');
+});
+$('btn-clear-notes').addEventListener('click', ()=>{
+  const s=getSession(); if(!s) return;
+  if(!confirm('Svuotare tutte le note personali?')) return;
+  writeNotes(s.username,[]); renderNotes(s.username);
+});
+
+/* ===== User menu + Logout ===== */
+(function userMenu(){
+  const btn = $('user-menu-btn'), pop=$('user-menu-pop'), uName=$('um-username'), uRole=$('um-role'), btnLogout=$('btn-logout');
+  function getSess(){ try{return JSON.parse(localStorage.getItem(AUTH_KEY)||'null')}catch{return null} }
+  function auditLogout(){
+    try{
+      const s=getSess(); if(!s) return;
+      const list = JSON.parse(localStorage.getItem(AUDIT_KEY)||'[]');
+      list.unshift({ ts:new Date().toISOString(), user:s.username, type:'logout', detail:'uscita manuale' });
+      localStorage.setItem(AUDIT_KEY, JSON.stringify(list));
+    }catch(_){}
+  }
+  const s = ensureRole(); if(!s) return;
+  uName.textContent = s.username||'utente';
+  uRole.textContent = 'collaboratore';
+  document.querySelector('.avatar').textContent = (s.username||'?').slice(0,1).toUpperCase();
+  btn.addEventListener('click', (e)=>{e.stopPropagation(); pop.classList.toggle('show');});
+  document.addEventListener('click', ()=> pop.classList.remove('show'));
+  document.addEventListener('keydown', (e)=>{ if(e.key==='Escape') pop.classList.remove('show'); });
+  btnLogout.addEventListener('click', ()=>{ auditLogout(); localStorage.removeItem(AUTH_KEY); location.href='login.html'; });
+})();
+
+/* ===== Boot ===== */
+(function boot(){
+  loadLogo();
+  const s = ensureRole(); if(!s) return;
+  renderMyTickets(s.username);
+  renderSchedule(s.username);
+  renderNotes(s.username);
+})();
+</script>
+</body>
+</html>
