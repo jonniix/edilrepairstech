@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="utf-8" />
+  <title>Import JSON → Supabase</title>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <style>
+    body{font:14px system-ui;padding:20px;max-width:860px;margin:auto}
+    .card{border:1px solid #cbd5e1;border-radius:12px;padding:16px;margin:12px 0}
+    .log{white-space:pre-wrap;background:#0f172a;color:#e2e8f0;padding:10px;border-radius:8px;max-height:260px;overflow:auto}
+    input[type=file]{margin:6px 0}
+    .ok{color:#16a34a}.err{color:#dc2626}
+  </style>
+</head>
+<body>
+<h1>Importa backup JSON in Supabase</h1>
+
+<div class="card">
+  <label>Supabase URL</label>
+  <input id="sb-url" style="width:100%" value="https://cvmniyociytwlagyfwed.supabase.co">
+  <label>Supabase ANON KEY</label>
+  <input id="sb-key" style="width:100%" value="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImN2bW5peW9jaXl0d2xhZ3lmd2VkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjI4MDg4NjMsImV4cCI6MjA3ODM4NDg2M30.gy90vkwY2UV3QYpk1OL9s_9XumfLW1nSTqKiglpc9UA">
+</div>
+
+<div class="card">
+  <p><b>Seleziona il tuo file JSON</b> (può essere un unico file con più sezioni oppure uno per tabella):</p>
+  <input type="file" id="file" accept=".json,application/json">
+  <div>
+    <label>Mappa chiavi → tabelle (se il file contiene più sezioni):</label>
+    <pre id="mapping" contenteditable="true" class="log" style="background:#111827;color:#d1d5db">
+{
+  "tickets_inbox": "tickets_inbox",
+  "tickets": "tickets",
+  "audit": "audit_log",
+  "schedules": "schedules",
+  "notes": "notes",
+  "profiles": "profiles"
+}
+    </pre>
+  </div>
+  <button id="run">Importa</button>
+</div>
+
+<div class="card">
+  <h3>Log</h3>
+  <div id="log" class="log"></div>
+</div>
+
+<script>
+function log(msg, cls){ const el=document.getElementById('log'); el.innerHTML += (cls?`<span class="${cls}">${msg}</span>`:msg)+'\n'; el.scrollTop = el.scrollHeight; }
+function chunk(arr, size=500){ const out=[]; for(let i=0;i<arr.length;i+=size) out.push(arr.slice(i,i+size)); return out; }
+
+document.getElementById('run').onclick = async ()=>{
+  const f = document.getElementById('file').files[0];
+  if(!f){ alert('Seleziona un file JSON'); return; }
+  const url = document.getElementById('sb-url').value.trim();
+  const key = document.getElementById('sb-key').value.trim();
+  const mapping = JSON.parse(document.getElementById('mapping').innerText);
+
+  window.supabase = supabase.createClient(url, key);
+
+  // leggi file
+  const text = await f.text();
+  let data;
+  try{ data = JSON.parse(text); }catch(e){ log('Errore parsing JSON: '+e.message,'err'); return; }
+
+  // se il JSON è un array → chiedi a quale tabella inviare
+  if(Array.isArray(data)){
+    const table = prompt('Nome tabella di destinazione (es. tickets, audit_log, notes, ...):','tickets');
+    if(!table) return;
+    await importArrayToTable(data, table);
+    return;
+  }
+
+  // se è un oggetto con sezioni (es. { tickets: [...], audit: [...] })
+  for(const keySec of Object.keys(data)){
+    const arr = data[keySec];
+    if(!Array.isArray(arr)){ log(`Sezione ${keySec} non è un array: salto`,'err'); continue; }
+    const table = mapping[keySec] || keySec; // mappa o usa stesso nome
+    await importArrayToTable(arr, table);
+  }
+
+  log('FATTO ✅','ok');
+};
+
+async function importArrayToTable(arr, table){
+  log(`\n==> Import in tabella "${table}" (${arr.length} record)`);
+  // mapping campi minimo per nostre tabelle
+  const normalize = (row)=>{
+    switch(table){
+      case 'tickets_inbox':
+        return {
+          id: row.id || undefined,
+          title: row.title || row.titolo || '',
+          priority: row.priority || 'media',
+          customer: row.customer || null,
+          site: row.site || null,
+          category: row.category || null,
+          due: row.due || null,
+          eta: row.eta ?? null,
+          description: row.desc || row.description || '',
+          created_by: row.created_by || null,
+          created_at: row.created_at || row.ts || null
+        };
+      case 'tickets':
+        return {
+          id: row.id || undefined,
+          title: row.title || '',
+          priority: row.priority || 'media',
+          customer: row.customer || null,
+          site: row.site || null,
+          category: row.category || null,
+          due: row.due || null,
+          eta: row.eta ?? null,
+          description: row.description || row.desc || '',
+          created_by: row.created_by || null,
+          created_at: row.created_at || row.ts || null,
+          source: row.source || 'app'
+        };
+      case 'audit_log':
+        return {
+          // id è bigserial -> non lo passiamo
+          ts: row.ts || row.timestamp || new Date().toISOString(),
+          user_id: row.user_id || null,
+          user_name: row.user_name || row.user || null,
+          type: row.type || 'other',
+          detail: row.detail || ''
+        };
+      case 'schedules':
+        return {
+          id: row.id || undefined,
+          owner: row.owner || row.user_id || null,
+          date: row.date || null,
+          time: row.time || null,
+          dur: row.dur != null ? Number(row.dur) : null,
+          task: row.task || ''
+        };
+      case 'notes':
+        return {
+          id: row.id || undefined,
+          owner: row.owner || row.user_id || null,
+          title: row.title || '',
+          tags: row.tags || '',
+          body: row.body || '',
+          created_at: row.created_at || row.ts || null
+        };
+      case 'profiles':
+        return {
+          id: row.id || undefined,          // deve combaciare con auth.users.id (se già esiste)
+          username: row.username || row.email,
+          role: row.role || 'user'
+        };
+      default:
+        return row;
+    }
+  };
+
+  const batches = chunk(arr.map(normalize), 500);
+  for(let i=0;i<batches.length;i++){
+    const part = batches[i];
+    const { error, count } = await supabase.from(table).insert(part);
+    if(error){ log(`Batch ${i+1}/${batches.length} ERRORE: `+error.message,'err'); return; }
+    log(`Batch ${i+1}/${batches.length} OK (+${part.length})`,'ok');
+  }
+}
+</script>
+</body>
+</html>

@@ -1,13 +1,6 @@
 <!DOCTYPE html>
 <html lang="it" data-theme="dark">
 <head>
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script>
-  const SUPABASE_URL = "https://cvmniyociytwlagyfwed.supabase.co";
-  const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImN2bW5peW9jaXl0d2xhZ3lmd2VkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjI4MDg4NjMsImV4cCI6MjA3ODM4NDg2M30.gy90vkwY2UV3QYpk1OL9s_9XumfLW1nSTqKiglpc9UA";
-
-  window.supabase = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-</script>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Area Collaboratori · Gestione Cantieri</title>
@@ -83,395 +76,254 @@
   <div class="topbar">
     <div class="brand">
       <div class="logo"><img id="logo" alt="logo"></div>
-      <script>
-      const PROFILES_TABLE = 'profiles';
-      const TICKETS_INBOX_TABLE = 'tickets_inbox';
-      const SCHEDULES_TABLE = 'schedules';
-      const NOTES_TABLE = 'notes';
-      const AUDIT_TABLE = 'audit_log';
+      <div>
+        <div class="title">Area Collaboratori</div>
+        <div class="muted">Gestione Cantieri</div>
+      </div>
+    </div>
+    <div class="right">
+      <div class="user-menu">
+        <button id="user-menu-btn" class="btn-ghost user-chip" aria-haspopup="menu" aria-expanded="false">
+          <span class="avatar" aria-hidden="true">👤</span>
+          <span class="user-label">
+            <b id="um-username">utente</b>
+            <small id="um-role" class="muted">collaboratore</small>
+          </span>
+          <span class="chev">▾</span>
+        </button>
+        <div id="user-menu-pop" class="menu" role="menu" aria-hidden="true">
+          <button class="item" id="um-profile" role="menuitem">Profilo</button>
+          <div class="sep"></div>
+          <button class="item danger" id="btn-logout" role="menuitem">🚪 Logout</button>
+        </div>
+      </div>
+      <div title="Tema" id="theme-switch" class="switch" aria-label="Cambia tema"></div>
+    </div>
+  </div>
 
-      const $ = (id)=> document.getElementById(id);
-      const showToast = (m)=>{ const t=$('toast'); if(!t) return; t.textContent=m; t.classList.add('show'); setTimeout(()=>t.classList.remove('show'),2200); };
+  <div class="wrap">
+    <!-- Tabs -->
+    <div class="tabs">
+      <button class="tabbtn active" data-tab="t-ticket">Ticket</button>
+      <button class="tabbtn" data-tab="t-schedule">Programma di lavoro</button>
+      <button class="tabbtn" data-tab="t-archive">Archivio personale</button>
+    </div>
 
-      /* ===== Tema + Logo da settings ===== */
-      (function theme(){
-        try{
-          const saved = localStorage.getItem('theme') || 'dark';
-          document.documentElement.setAttribute('data-theme', saved);
-          $('theme-switch')?.addEventListener('click', ()=>{
-            const t = document.documentElement.getAttribute('data-theme');
-            const next = t==='light'?'dark':'light';
-            document.documentElement.setAttribute('data-theme', next);
-            localStorage.setItem('theme', next);
-          });
-        }catch(_){ }
-      })();
+    <!-- Ticket -->
+    <section id="t-ticket" class="card">
+      <h2 class="title" style="margin-top:0">Invia nuovo ticket</h2>
+      <div class="row two">
+        <div>
+          <label>Titolo</label>
+          <input id="tk-title" placeholder="es. Guasto impianto, Servizio, ecc." />
+        </div>
+        <div>
+          <label>Priorità</label>
+          <select id="tk-priority">
+            <option value="media">Media</option>
+            <option value="alta">Alta</option>
+            <option value="bassa">Bassa</option>
+          </select>
+        </div>
+      </div>
+      <div class="row two">
+        <div>
+          <label>Cliente</label>
+          <input id="tk-customer" placeholder="Ragione sociale o nome" />
+        </div>
+        <div>
+          <label>Cantiere</label>
+          <input id="tk-site" placeholder="codice/nome cantiere" />
+        </div>
+      </div>
+      <div class="row three">
+        <div>
+          <label>Categoria</label>
+          <input id="tk-category" placeholder="es. elettrico, idraulico…" />
+        </div>
+        <div>
+          <label>Scadenza</label>
+          <input id="tk-due" type="date" />
+        </div>
+        <div>
+          <label>Ore stimate</label>
+          <input id="tk-eta" type="number" min="0" step="0.5" placeholder="0" />
+        </div>
+      </div>
+      <div>
+        <label>Descrizione</label>
+        <textarea id="tk-desc" placeholder="Dettagli del problema o richiesta"></textarea>
+      </div>
+      <div class="sep"></div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn btn-primary" id="btn-send-ticket">Invia ticket</button>
+        <button class="btn btn-ghost" id="btn-clear-ticket">Pulisci</button>
+      </div>
 
-      const IDB_DB='gc_store', IDB_STORE='state', IDB_KEY='gestione-cantieri';
-      function idbOpen(){
-        return new Promise((res,rej)=>{
-          const rq = indexedDB.open(IDB_DB,1);
-          rq.onupgradeneeded = ()=>{ const db=rq.result; if(!db.objectStoreNames.contains(IDB_STORE)) db.createObjectStore(IDB_STORE); };
-          rq.onsuccess = ()=> res(rq.result);
-          rq.onerror = ()=> rej(rq.error);
-        });
-      }
-      async function idbGet(key){
-        try{
-          const db = await idbOpen();
-          return await new Promise((res,rej)=>{
-            const tx = db.transaction(IDB_STORE,'readonly');
-            const rq = tx.objectStore(IDB_STORE).get(key);
-            rq.onsuccess = ()=> res(rq.result ?? null);
-            rq.onerror = ()=> rej(rq.error);
-          });
-        }catch{ return null; }
-      }
-      async function loadLogo(){
-        try{
-          const state = await idbGet(IDB_KEY);
-          const dataUrl = state?.settings?.logoDataUrl || '';
-          if(dataUrl){ $('logo').src = dataUrl; $('dynamic-favicon').href = dataUrl; }
-        }catch(_){ }
-      }
+      <div class="sep"></div>
 
-      /* ===== Supabase context ===== */
-      let sessionData = null;
-      let profileData = null;
-      let ticketsCache = [];
-      let scheduleCache = [];
-      let notesCache = [];
+      <h3 class="title" style="font-size:1.05rem;margin:.2rem 0 .5rem">Ticket inviati (solo tuo profilo)</h3>
+      <div class="list" id="my-tickets"></div>
+    </section>
 
-      function resolveName(){
-        return profileData?.username || profileData?.email || sessionData?.user?.email || 'collaboratore';
-      }
+    <!-- Programma di lavoro -->
+    <section id="t-schedule" class="card" style="display:none">
+      <h2 class="title" style="margin-top:0">Programma di lavoro</h2>
+      <div class="row three">
+        <div>
+          <label>Data</label>
+          <input id="sc-date" type="date" />
+        </div>
+        <div>
+          <label>Orario</label>
+          <input id="sc-time" type="time" />
+        </div>
+        <div>
+          <label>Durata (h)</label>
+          <input id="sc-dur" type="number" min="0" step="0.5" placeholder="4" />
+        </div>
+      </div>
+      <div>
+        <label>Attività</label>
+        <input id="sc-task" placeholder="es. sopralluogo cantiere A" />
+      </div>
+      <div class="sep"></div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn btn-primary" id="btn-add-slot">Aggiungi</button>
+        <button class="btn btn-ghost" id="btn-clear-slots">Svuota</button>
+      </div>
+      <div class="sep"></div>
+      <table class="table" id="schedule-table">
+        <thead><tr><th>Data</th><th>Ora</th><th>Durata</th><th>Attività</th><th></th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </section>
 
-      async function fetchProfile(userId){
-        try{
-          const { data, error } = await supabase
-            .from(PROFILES_TABLE)
-            .select('id,user_id,username,email,role')
-            .eq('user_id', userId)
-            .maybeSingle();
-          if(error){ console.warn('fetchProfile', error); return null; }
-          return data || null;
-        }catch(err){ console.warn('fetchProfile', err); return null; }
-      }
+    <!-- Archivio personale -->
+    <section id="t-archive" class="card" style="display:none">
+      <h2 class="title" style="margin-top:0">Archivio personale</h2>
+      <div class="row two">
+        <div>
+          <label>Titolo nota</label>
+          <input id="ar-title" placeholder="es. Materiali da ordinare" />
+        </div>
+        <div>
+          <label>Tag</label>
+          <input id="ar-tags" placeholder="es. magazzino, urgenza" />
+        </div>
+      </div>
+      <div>
+        <label>Contenuto</label>
+        <textarea id="ar-body" placeholder="Scrivi qui la tua nota personale"></textarea>
+      </div>
+      <div class="sep"></div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn btn-primary" id="btn-add-note">Salva nota</button>
+        <button class="btn btn-ghost" id="btn-clear-notes">Svuota</button>
+      </div>
+      <div class="sep"></div>
+      <div class="list" id="notes-list"></div>
+    </section>
+  </div>
 
-      async function requireCollaborator(){
-        const { data:{ session } } = await supabase.auth.getSession();
-        if(!session?.user){ location.replace('login.html'); return false; }
-        sessionData = session;
-        profileData = await fetchProfile(session.user.id);
-        if(!profileData){ location.replace('login.html'); return false; }
-        if(profileData.role !== 'collaboratore'){
-          if(profileData.role === 'admin'){ location.replace('login.html'); }
-          else { location.replace('index.html'); }
-          return false;
-        }
-        return true;
-      }
+  <div id="toast" class="toast"></div>
 
-      async function logAudit(detail, type='other'){
-        try{
-          await supabase.from(AUDIT_TABLE).insert({
-            user_id: sessionData?.user?.id || null,
-            user: resolveName(),
-            type,
-            detail,
-            created_at: new Date().toISOString()
-          });
-        }catch(err){ console.warn('audit', err); }
-      }
+<script>
+/* ===== CHIAVI STORAGE CONDIVISE ===== */
+const AUTH_KEY = 'gc_auth_user';
+const AUDIT_KEY = 'gc_audit_v1';
+const IDB_DB='gc_store', IDB_STORE='state', IDB_KEY='gestione-cantieri';
+const TICKET_INBOX_KEY = 'gc_ticket_inbox_v1';  // coda condivisa con l’app
+const MY_TK_KEY = (u)=> `gc_collab_${u}_tickets`;
+const SC_KEY    = (u)=> `gc_collab_${u}_schedule`;
+const AR_KEY    = (u)=> `gc_collab_${u}_archive`;
 
-      /* ===== Tabs ===== */
-      function bindTabs(){
-        document.querySelectorAll('.tabbtn').forEach(b=>{
-          b.addEventListener('click', ()=>{
-            document.querySelectorAll('.tabbtn').forEach(x=>x.classList.remove('active'));
-            document.querySelectorAll('section.card').forEach(x=>x.style.display='none');
-            b.classList.add('active');
-            $(b.dataset.tab).style.display='';
-          });
-        });
-      }
+const $ = (id)=> document.getElementById(id);
+const showToast=(m)=>{ const t=$('toast'); t.textContent=m; t.classList.add('show'); setTimeout(()=>t.classList.remove('show'),2200); };
 
-      /* ===== Tickets ===== */
-      async function loadMyTickets(){
-        if(!sessionData?.user) return;
-        const box = $('my-tickets');
-        box.innerHTML = '<div class="muted">Caricamento…</div>';
-        try{
-          const { data, error } = await supabase
-            .from(TICKETS_INBOX_TABLE)
-            .select('id,title,priority,customer,site,category,due,eta,description,created_at,status')
-            .eq('created_by_id', sessionData.user.id)
-            .order('created_at',{ ascending:false });
-          if(error){ console.warn('loadMyTickets', error); box.innerHTML = '<div class="muted">Errore caricamento ticket</div>'; return; }
-          ticketsCache = data || [];
-          renderMyTickets();
-        }catch(err){
-          console.warn('loadMyTickets', err);
-          box.innerHTML = '<div class="muted">Errore caricamento ticket</div>';
-        }
-      }
+/* ===== Tema + Logo da settings ===== */
+(function theme(){
+  const saved = localStorage.getItem('theme') || 'dark';
+  document.documentElement.setAttribute('data-theme', saved);
+  $('theme-switch')?.addEventListener('click', ()=>{
+    const t = document.documentElement.getAttribute('data-theme');
+    const next = t==='light'?'dark':'light';
+    document.documentElement.setAttribute('data-theme', next);
+    localStorage.setItem('theme', next);
+  });
+})();
+function idbOpen(){
+  return new Promise((res,rej)=>{
+    const rq = indexedDB.open(IDB_DB,1);
+    rq.onupgradeneeded = ()=>{ const db=rq.result; if(!db.objectStoreNames.contains(IDB_STORE)) db.createObjectStore(IDB_STORE); };
+    rq.onsuccess = ()=> res(rq.result);
+    rq.onerror = ()=> rej(rq.error);
+  });
+}
+async function idbGet(key){
+  try{
+    const db = await idbOpen();
+    return await new Promise((res,rej)=>{
+      const tx = db.transaction(IDB_STORE,'readonly');
+      const rq = tx.objectStore(IDB_STORE).get(key);
+      rq.onsuccess = ()=> res(rq.result ?? null);
+      rq.onerror = ()=> rej(rq.error);
+    });
+  }catch{ return null; }
+}
+async function loadLogo(){
+  const state = await idbGet(IDB_KEY);
+  const dataUrl = state?.settings?.logoDataUrl || '';
+  if(dataUrl){ $('logo').src = dataUrl; $('dynamic-favicon').href = dataUrl; }
+}
 
-      function renderMyTickets(){
-        const box = $('my-tickets');
-        if(!ticketsCache.length){ box.innerHTML = '<div class="muted">Nessun ticket inviato</div>'; return; }
-        box.innerHTML = ticketsCache.map(t=>`
-          <div class="item">
-            <div style="display:flex;justify-content:space-between;gap:.5rem;align-items:center">
-              <div><b>${t.title}</b> · <span class="pill">${t.priority||'media'}</span></div>
-              <small class="muted">${t.created_at? new Date(t.created_at).toLocaleString():'—'}</small>
-            </div>
-            <div class="muted" style="margin:.2rem 0">${t.customer||''} ${t.site? '· '+t.site:''} ${t.category? '· '+t.category:''}</div>
-            <div>${(t.description||'').replace(/\n/g,'<br>')}</div>
-            ${t.due? `<div class="muted">Scadenza: ${t.due}</div>`:''}
-            <div class="muted">Stato: ${t.status||'inbox'}</div>
-          </div>
-        `).join('');
-      }
+/* ===== Sessione obbligatoria + role check ===== */
+function getSession(){
+  try { return JSON.parse(localStorage.getItem(AUTH_KEY)||'null'); } catch { return null; }
+}
+function ensureRole(){
+  const s = getSession();
+  if(!s){ location.replace('login.html'); return null; }
+  if(s.role!=='collaboratore'){ location.replace('index.html'); return null; }
+  return s;
+}
 
-      function bindTicketActions(){
-        $('btn-send-ticket')?.addEventListener('click', async ()=>{
-          if(!sessionData?.user) return;
-          const title = $('tk-title').value.trim();
-          if(!title){ showToast('Inserisci un titolo'); return; }
-          const payload = {
-            title,
-            priority: $('tk-priority').value,
-            customer: $('tk-customer').value.trim() || null,
-            site: $('tk-site').value.trim() || null,
-            category: $('tk-category').value.trim() || null,
-            due: $('tk-due').value || null,
-            eta: $('tk-eta').value ? Number($('tk-eta').value) : null,
-            description: $('tk-desc').value.trim() || null,
-            created_by: resolveName(),
-            created_by_id: sessionData.user.id,
-            status: 'inbox'
-          };
-          $('btn-send-ticket').setAttribute('disabled','disabled');
-          try{
-            const { error } = await supabase.from(TICKETS_INBOX_TABLE).insert(payload);
-            if(error){ showToast('Errore invio ticket'); console.warn('ticket insert', error); return; }
-            await logAudit('collaboratore: nuovo ticket inviato – '+title, 'create');
-            ['tk-title','tk-customer','tk-site','tk-category','tk-due','tk-eta','tk-desc'].forEach(id=>{ const el=$(id); if(el) el.value=''; });
-            showToast('Ticket inviato');
-            await loadMyTickets();
-          }catch(err){
-            console.warn('ticket insert', err);
-            showToast('Errore invio ticket');
-          }finally{
-            $('btn-send-ticket').removeAttribute('disabled');
-          }
-        });
+/* ===== Audit helper ===== */
+function audit(detail){
+  try{
+    const s=getSession(); if(!s) return;
+    const list = JSON.parse(localStorage.getItem(AUDIT_KEY)||'[]');
+    list.unshift({ ts:new Date().toISOString(), user:s.username, type:'other', detail });
+    localStorage.setItem(AUDIT_KEY, JSON.stringify(list));
+  }catch(_){}
+}
 
-        $('btn-clear-ticket')?.addEventListener('click', ()=>{
-          ['tk-title','tk-customer','tk-site','tk-category','tk-due','tk-eta','tk-desc'].forEach(id=>{ const el=$(id); if(el) el.value=''; });
-        });
-      }
+/* ===== Tabs ===== */
+document.querySelectorAll('.tabbtn').forEach(b=>{
+  b.addEventListener('click', ()=>{
+    document.querySelectorAll('.tabbtn').forEach(x=>x.classList.remove('active'));
+    document.querySelectorAll('section.card').forEach(x=>x.style.display='none');
+    b.classList.add('active');
+    $(b.dataset.tab).style.display='';
+  });
+});
 
-      /* ===== Schedules ===== */
-      async function loadSchedule(){
-        if(!sessionData?.user) return;
-        const tbody = $('schedule-table').querySelector('tbody');
-        tbody.innerHTML = '<tr><td colspan="5" class="muted">Caricamento…</td></tr>';
-        try{
-          const { data, error } = await supabase
-            .from(SCHEDULES_TABLE)
-            .select('id,date,time,duration,task')
-            .eq('user_id', sessionData.user.id)
-            .order('date',{ ascending:true })
-            .order('time',{ ascending:true });
-          if(error){ console.warn('loadSchedule', error); tbody.innerHTML = '<tr><td colspan="5" class="muted">Errore</td></tr>'; return; }
-          scheduleCache = data || [];
-          renderSchedule();
-        }catch(err){
-          console.warn('loadSchedule', err);
-          tbody.innerHTML = '<tr><td colspan="5" class="muted">Errore</td></tr>';
-        }
-      }
+/* ===== Ticket ===== */
+function readInbox(){ try{ return JSON.parse(localStorage.getItem(TICKET_INBOX_KEY)||'[]'); }catch{return []} }
+function writeInbox(a){ localStorage.setItem(TICKET_INBOX_KEY, JSON.stringify(a)); }
+function readMyTk(user){ try{ return JSON.parse(localStorage.getItem(MY_TK_KEY(user))||'[]'); }catch{return []} }
+function writeMyTk(user,a){ localStorage.setItem(MY_TK_KEY(user), JSON.stringify(a)); }
 
-      function renderSchedule(){
-        const tbody = $('schedule-table').querySelector('tbody');
-        if(!scheduleCache.length){ tbody.innerHTML = '<tr><td colspan="5" class="muted">Nessuna voce</td></tr>'; return; }
-        tbody.innerHTML = scheduleCache.map(row=>`
-          <tr>
-            <td>${row.date||''}</td>
-            <td>${row.time||''}</td>
-            <td>${row.duration ?? ''}</td>
-            <td>${row.task||''}</td>
-            <td style="text-align:right"><button class="btn btn-ghost" data-id="${row.id}" data-act="rm">Elimina</button></td>
-          </tr>
-        `).join('');
-        tbody.querySelectorAll('[data-act="rm"]').forEach(btn=>{
-          btn.addEventListener('click', async ()=>{
-            const id = btn.dataset.id;
-            const { error } = await supabase.from(SCHEDULES_TABLE).delete().eq('id', id).eq('user_id', sessionData.user.id);
-            if(error){ showToast('Errore eliminazione'); console.warn('schedule delete', error); return; }
-            await logAudit('collaboratore: eliminato slot agenda', 'delete');
-            await loadSchedule();
-          });
-        });
-      }
-
-      function bindScheduleActions(){
-        $('btn-add-slot')?.addEventListener('click', async ()=>{
-          if(!sessionData?.user) return;
-          const payload = {
-            user_id: sessionData.user.id,
-            date: $('sc-date').value || null,
-            time: $('sc-time').value || null,
-            duration: $('sc-dur').value ? Number($('sc-dur').value) : null,
-            task: $('sc-task').value.trim() || null,
-            created_by: resolveName()
-          };
-          const { error } = await supabase.from(SCHEDULES_TABLE).insert(payload);
-          if(error){ showToast('Errore salvataggio'); console.warn('schedule insert', error); return; }
-          await logAudit('collaboratore: aggiunto slot agenda', 'create');
-          ['sc-date','sc-time','sc-dur','sc-task'].forEach(id=>$(id).value='');
-          await loadSchedule();
-        });
-
-        $('btn-clear-slots')?.addEventListener('click', async ()=>{
-          if(!sessionData?.user) return;
-          if(!confirm('Svuotare il programma di lavoro?')) return;
-          const { error } = await supabase.from(SCHEDULES_TABLE).delete().eq('user_id', sessionData.user.id);
-          if(error){ showToast('Errore svuotamento'); console.warn('schedule clear', error); return; }
-          await logAudit('collaboratore: svuotata agenda', 'delete');
-          await loadSchedule();
-        });
-      }
-
-      /* ===== Notes ===== */
-      async function loadNotes(){
-        if(!sessionData?.user) return;
-        const box = $('notes-list');
-        box.innerHTML = '<div class="muted">Caricamento…</div>';
-        try{
-          const { data, error } = await supabase
-            .from(NOTES_TABLE)
-            .select('id,title,tags,body,created_at')
-            .eq('user_id', sessionData.user.id)
-            .order('created_at',{ ascending:false });
-          if(error){ console.warn('loadNotes', error); box.innerHTML = '<div class="muted">Errore caricamento</div>'; return; }
-          notesCache = data || [];
-          renderNotes();
-        }catch(err){
-          console.warn('loadNotes', err);
-          box.innerHTML = '<div class="muted">Errore caricamento</div>';
-        }
-      }
-
-      function renderNotes(){
-        const box = $('notes-list');
-        if(!notesCache.length){ box.innerHTML = '<div class="muted">Nessuna nota</div>'; return; }
-        box.innerHTML = notesCache.map(n=>`
-          <div class="item" data-id="${n.id}">
-            <div style="display:flex;justify-content:space-between;gap:.5rem;align-items:center">
-              <div><b>${n.title||'Senza titolo'}</b> ${n.tags?`<span class="pill">${n.tags}</span>`:''}</div>
-              <div style="display:flex;gap:6px">
-                <button class="btn btn-ghost" data-act="edit">Modifica</button>
-                <button class="btn btn-danger" data-act="del">Elimina</button>
-              </div>
-            </div>
-            <div class="muted" style="margin:.2rem 0">${n.created_at? new Date(n.created_at).toLocaleString():'—'}</div>
-            <div>${(n.body||'').replace(/\n/g,'<br>')}</div>
-          </div>
-        `).join('');
-
-        box.querySelectorAll('[data-act="del"]').forEach(btn=>{
-          btn.addEventListener('click', async ()=>{
-            const card = btn.closest('.item');
-            const id = card?.dataset.id;
-            const { error } = await supabase.from(NOTES_TABLE).delete().eq('id', id).eq('user_id', sessionData.user.id);
-            if(error){ showToast('Errore eliminazione'); console.warn('note delete', error); return; }
-            await logAudit('collaboratore: eliminata nota personale', 'delete');
-            await loadNotes();
-          });
-        });
-
-        box.querySelectorAll('[data-act="edit"]').forEach(btn=>{
-          btn.addEventListener('click', ()=>{
-            const card = btn.closest('.item');
-            const id = card?.dataset.id;
-            const note = notesCache.find(n=> String(n.id) === String(id));
-            if(!note) return;
-            $('ar-title').value = note.title || '';
-            $('ar-tags').value = note.tags || '';
-            $('ar-body').value = note.body || '';
-            supabase.from(NOTES_TABLE).delete().eq('id', id).eq('user_id', sessionData.user.id).then(()=>{
-              logAudit('collaboratore: modifica nota personale', 'update');
-              loadNotes();
-            });
-          });
-        });
-      }
-
-      function bindNotesActions(){
-        $('btn-add-note')?.addEventListener('click', async ()=>{
-          if(!sessionData?.user) return;
-          const payload = {
-            user_id: sessionData.user.id,
-            title: $('ar-title').value.trim() || null,
-            tags: $('ar-tags').value.trim() || null,
-            body: $('ar-body').value.trim() || null,
-            created_by: resolveName()
-          };
-          const { error } = await supabase.from(NOTES_TABLE).insert(payload);
-          if(error){ showToast('Errore salvataggio'); console.warn('note insert', error); return; }
-          await logAudit('collaboratore: aggiunta nota personale', 'create');
-          ['ar-title','ar-tags','ar-body'].forEach(id=>$(id).value='');
-          await loadNotes();
-        });
-
-        $('btn-clear-notes')?.addEventListener('click', async ()=>{
-          if(!sessionData?.user) return;
-          if(!confirm('Svuotare tutte le note personali?')) return;
-          const { error } = await supabase.from(NOTES_TABLE).delete().eq('user_id', sessionData.user.id);
-          if(error){ showToast('Errore svuotamento'); console.warn('notes clear', error); return; }
-          await logAudit('collaboratore: svuotate note personali', 'delete');
-          await loadNotes();
-        });
-      }
-
-      /* ===== User menu + Logout ===== */
-      function bindUserMenu(){
-        const btn = $('user-menu-btn');
-        const pop = $('user-menu-pop');
-        const uName=$('um-username');
-        const uRole=$('um-role');
-        const btnLogout=$('btn-logout');
-        if(!btn || !pop) return;
-        uName.textContent = resolveName();
-        uRole.textContent = 'collaboratore';
-        const avatar = document.querySelector('.avatar');
-        if(avatar){ avatar.textContent = resolveName().slice(0,1).toUpperCase(); }
-        btn.addEventListener('click', (e)=>{ e.stopPropagation(); pop.classList.toggle('show'); });
-        document.addEventListener('click', ()=> pop.classList.remove('show'));
-        document.addEventListener('keydown', (e)=>{ if(e.key==='Escape') pop.classList.remove('show'); });
-        btnLogout.addEventListener('click', async ()=>{
-          await logAudit('collaboratore logout', 'logout');
-          await supabase.auth.signOut();
-          location.href='login.html';
-        });
-      }
-
-      async function boot(){
-        await loadLogo();
-        const ok = await requireCollaborator();
-        if(!ok) return;
-        bindTabs();
-        bindTicketActions();
-        bindScheduleActions();
-        bindNotesActions();
-        bindUserMenu();
-        await Promise.all([loadMyTickets(), loadSchedule(), loadNotes()]);
-      }
-
-      document.addEventListener('DOMContentLoaded', boot);
-      </script>
+function renderMyTickets(user){
+  const box = $('my-tickets');
+  const arr = readMyTk(user);
+  if(!arr.length){ box.innerHTML = '<div class="muted">Nessun ticket inviato</div>'; return; }
+  box.innerHTML = arr.map(t=>`
+    <div class="item">
+      <div style="display:flex;justify-content:space-between;gap:.5rem;align-items:center">
+        <div><b>${t.title}</b> · <span class="pill">${t.priority}</span></div>
+        <small class="muted">${new Date(t.ts).toLocaleString()}</small>
+      </div>
       <div class="muted" style="margin:.2rem 0">${t.customer||''} ${t.site? '· '+t.site:''} ${t.category? '· '+t.category:''}</div>
       <div>${(t.desc||'').replace(/\n/g,'<br>')}</div>
       ${t.due? `<div class="muted">Scadenza: ${t.due}</div>`:''}
@@ -623,19 +475,6 @@ $('btn-clear-notes').addEventListener('click', ()=>{
   renderSchedule(s.username);
   renderNotes(s.username);
 })();
-<div id="sb-selfcheck" style="position:fixed;right:10px;bottom:10px;font:12px system-ui;background:#0f1a2c;color:#e8eef6;border:1px solid #1e2b45;border-radius:10px;padding:6px 10px;opacity:.85;z-index:9999"></div>
-<script>
-  (async()=>{
-    const el=document.getElementById('sb-selfcheck');
-    if(!el) return;
-    try{
-      if(typeof supabase==='undefined'){ el.textContent='Supabase ❌'; return; }
-      const { error } = await supabase.from('profiles').select('id').limit(1);
-      el.textContent = error ? 'Supabase ❌ connessione' : 'Supabase ✅ connesso';
-    }catch(_){
-      el.textContent='Supabase ❌ connessione';
-    }
-  })();
 </script>
 </body>
 </html>
