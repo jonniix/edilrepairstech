@@ -144,29 +144,32 @@
 <div id="toast" class="toast"></div>
 
 <script>
-/* ===== chiavi/nomi allineati con la tua app ===== */
-const IDB_DB = 'gc_store';
-const IDB_STORE = 'state';
-const IDB_KEY = 'gestione-cantieri';
-const USERS_KEY = 'gc_users_v1';
-const AUTH_KEY  = 'gc_auth_user';
-const AUDIT_KEY = 'gc_audit_v1';     // registro operazioni
+const PROFILES_TABLE = 'profiles';
+const AUDIT_TABLE = 'audit_log';
 const $ = (id)=> document.getElementById(id);
-const showToast=(m)=>{ const t=$('toast'); t.textContent=m; t.classList.add('show'); setTimeout(()=>t.classList.remove('show'),2200); };
+const showToast = (m)=>{ const t=$('toast'); if(!t) return; t.textContent=m; t.classList.add('show'); setTimeout(()=>t.classList.remove('show'),2200); };
+let manualRedirect = false;
+let redirectInProgress = false;
 
 /* ===== Tema ===== */
 (function theme(){
-  const saved = localStorage.getItem('theme') || 'dark';
-  document.documentElement.setAttribute('data-theme', saved);
-  $('theme-switch')?.addEventListener('click', ()=>{
-    const t = document.documentElement.getAttribute('data-theme');
-    const next = t==='light'?'dark':'light';
-    document.documentElement.setAttribute('data-theme', next);
-    localStorage.setItem('theme', next);
-  });
+  try{
+    const saved = localStorage.getItem('theme') || 'dark';
+    document.documentElement.setAttribute('data-theme', saved);
+    $('theme-switch')?.addEventListener('click', ()=>{
+      const t = document.documentElement.getAttribute('data-theme');
+      const next = t==='light'?'dark':'light';
+      document.documentElement.setAttribute('data-theme', next);
+      localStorage.setItem('theme', next);
+    });
+  }catch(_){ }
 })();
 
-/* ===== IndexedDB helpers ===== */
+/* ===== IndexedDB helpers (logo) ===== */
+const IDB_DB = 'gc_store';
+const IDB_STORE = 'state';
+const IDB_KEY = 'gestione-cantieri';
+
 function idbOpen(){
   return new Promise((res,rej)=>{
     if(!('indexedDB' in window)) return rej(new Error('IDB not available'));
@@ -188,197 +191,325 @@ async function idbGet(key){
   }catch{ return null; }
 }
 
-/* ===== Logo: SOLO da settings.logoDataUrl ===== */
 async function loadLogo(){
-  const state = await idbGet(IDB_KEY);
-  const dataUrl = state?.settings?.logoDataUrl || '';
-  if(dataUrl){ $('logo').src = dataUrl; $('dynamic-favicon').href = dataUrl; }
+  try{
+    const state = await idbGet(IDB_KEY);
+    const dataUrl = state?.settings?.logoDataUrl || '';
+    if(dataUrl){ $('logo').src = dataUrl; $('dynamic-favicon').href = dataUrl; }
+  }catch(_){ }
 }
 
-/* ===== Password: SHA-256 ===== */
-async function sha256(text){
-  const enc = new TextEncoder().encode(text);
-  const buf = await crypto.subtle.digest('SHA-256', enc);
-  return Array.from(new Uint8Array(buf)).map(b=>b.toString(16).padStart(2,'0')).join('');
-}
-const SALT = 'gc::salt::v1';
+/* ===== Supabase helpers ===== */
+let currentProfile = null;
+let auditCache = [];
 
-/* ===== Utenti ===== */
-function getUsers(){
-  try{ return JSON.parse(localStorage.getItem(USERS_KEY)||'[]'); }catch{ return []; }
-}
-function setUsers(list){ localStorage.setItem(USERS_KEY, JSON.stringify(list)); }
-async function ensureDefaultAdmin(){
-  const users = getUsers();
-  if(!users.length){
-    const hash = await sha256(SALT+'admin');
-    users.push({ username:'admin', role:'admin', passHash:hash, createdAt:new Date().toISOString() });
-    setUsers(users);
-  }
-}
-function renderUsers(){
-  const box = $('users-list');
-  const users = getUsers();
-  if(!users.length){ box.innerHTML = '<div class="muted">Nessun utente</div>'; return; }
-  box.innerHTML = users.map(u => `
-    <div class="userrow" data-u="${u.username}">
-      <div><b>${u.username}</b> <span class="muted">(${u.role})</span></div>
-      <div><button class="btn btn-ghost" data-act="reset">Reset PW</button></div>
-      <div>
-        <select data-act="role">
-          <option value="user" ${u.role==='user'?'selected':''}>user</option>
-          <option value="admin" ${u.role==='admin'?'selected':''}>admin</option>
-          <option value="collaboratore" ${u.role==='collaboratore'?'selected':''}>collaboratore</option>
-        </select>
-      </div>
-      <div class="actions" style="justify-content:flex-end">
-        <button class="btn btn-danger" data-act="del">Elimina</button>
-      </div>
-    </div>
-  `).join('');
-  box.querySelectorAll('[data-act="reset"]').forEach(btn=>{
-    btn.addEventListener('click', async ()=>{
-      const row = btn.closest('.userrow'); const uname = row.dataset.u;
-      const pw = prompt('Nuova password per '+uname+':'); if(!pw) return;
-      const users = getUsers(); const u = users.find(x=>x.username===uname);
-      if(!u) return;
-      u.passHash = await sha256(SALT+pw); setUsers(users); showToast('Password aggiornata');
-      audit('update', 'reset password utente '+uname);
-    });
-  });
-  box.querySelectorAll('[data-act="role"]').forEach(sel=>{
-    sel.addEventListener('change', ()=>{
-      const row = sel.closest('.userrow'); const uname = row.dataset.u;
-      const users = getUsers(); const u = users.find(x=>x.username===uname);
-      if(!u) return;
-      u.role = sel.value; setUsers(users); showToast('Ruolo aggiornato');
-      audit('update', 'cambiato ruolo '+uname+' -> '+sel.value);
-    });
-  });
-  box.querySelectorAll('[data-act="del"]').forEach(btn=>{
-    btn.addEventListener('click', ()=>{
-      const row = btn.closest('.userrow'); const uname = row.dataset.u;
-      if(!confirm('Eliminare utente '+uname+'?')) return;
-      setUsers(getUsers().filter(x=> x.username!==uname));
-      renderUsers();
-      showToast('Utente eliminato');
-      audit('delete', 'eliminato utente '+uname);
-    });
-  });
+async function gcAudit(type, detail, actorOverride){
+  try{
+    const { data:{ session } } = await supabase.auth.getSession();
+    const payload = {
+      type: type || 'other',
+      detail: detail || '',
+      user: actorOverride || session?.user?.user_metadata?.username || session?.user?.email || 'sconosciuto',
+      user_id: session?.user?.id || null,
+      created_at: new Date().toISOString()
+    };
+    await supabase.from(AUDIT_TABLE).insert(payload);
+  }catch(err){ console.warn('gcAudit error', err); }
 }
 
-/* ===== Audit log (contatore operazioni) ===== */
-function getAudit(){ try{ return JSON.parse(localStorage.getItem(AUDIT_KEY)||'[]'); }catch{ return []; } }
-function setAudit(list){ localStorage.setItem(AUDIT_KEY, JSON.stringify(list)); }
-function audit(type, detail, actor){
-  const sess = getSession();
-  const entry = {
-    ts: new Date().toISOString(),
-    user: actor || sess?.username || 'sconosciuto',
-    type: type || 'other',
-    detail: detail || ''
-  };
-  const list = getAudit(); list.unshift(entry); setAudit(list);
-  if(document.body.contains($('audit-table'))) renderAudit();
+async function fetchProfile(userId){
+  if(!userId) return null;
+  try{
+    const { data, error } = await supabase
+      .from(PROFILES_TABLE)
+      .select('id,user_id,username,email,role')
+      .eq('user_id', userId)
+      .maybeSingle();
+    if(error){ console.warn('fetchProfile', error); return null; }
+    return data || null;
+  }catch(err){ console.warn('fetchProfile', err); return null; }
 }
-function renderAudit(){
-  const tbody = document.querySelector('#audit-table tbody');
-  const list = getAudit();
-  const u = $('filter-user').value || '';
-  const t = $('filter-type').value || '';
-  const filtered = list.filter(x => (u? x.user===u : true) && (t? x.type===t : true));
-  tbody.innerHTML = filtered.map(x => `
-    <tr><td>${new Date(x.ts).toLocaleString()}</td><td>${x.user}</td><td>${x.type}</td><td>${x.detail||''}</td></tr>
-  `).join('') || '<tr><td colspan="4" class="muted">Nessuna voce</td></tr>';
-  // aggiorna select utenti
-  const users = [...new Set(getAudit().map(x=>x.user))].sort();
-  const sel = $('filter-user');
-  const cur = sel.value;
-  sel.innerHTML = '<option value="">tutti gli utenti</option>' + users.map(u=>`<option value="${u}">${u}</option>`).join('');
-  sel.value = cur || '';
+
+function resolveDisplayName(profile, fallback){
+  return profile?.username || profile?.email || fallback || 'utente';
 }
-$('filter-user')?.addEventListener('change', renderAudit);
-$('filter-type')?.addEventListener('change', renderAudit);
-$('btn-clear-audit')?.addEventListener('click', ()=>{
-  if(!confirm('Svuotare l’intero registro operazioni?')) return;
-  setAudit([]); renderAudit(); showToast('Registro svuotato');
-});
 
-/* ===== Sessione ===== */
-function getSession(){ try{return JSON.parse(localStorage.getItem(AUTH_KEY)||'null')}catch{return null} }
+function persistSession(profile, session){
+  try{
+    const payload = {
+      uid: session?.user?.id || profile?.user_id || profile?.id || '',
+      username: resolveDisplayName(profile, session?.user?.email || ''),
+      role: profile?.role || 'user',
+      loginAt: new Date().toISOString()
+    };
+    localStorage.setItem('gc_auth_user', JSON.stringify(payload));
+  }catch(_){ }
+}
 
-/* ===== Login ===== */
-$('login-form')?.addEventListener('submit', async (e)=>{
-  e.preventDefault();
-  const username = $('lg-user').value.trim();
-  const pass = $('lg-pass').value;
-  const users = getUsers();
-  const u = users.find(x=> x.username===username);
-  if(!u){ showToast('Utente non trovato'); return; }
-  const hash = await sha256(SALT+pass);
-  if(hash !== u.passHash){ showToast('Password errata'); return; }
-
-  // salva sessione
-  localStorage.setItem(AUTH_KEY, JSON.stringify({ username:u.username, role:u.role, loginAt:new Date().toISOString() }));
-  audit('login', 'accesso effettuato', u.username);
-  showToast('Accesso effettuato');
-
-  if(u.role === 'collaboratore'){
-    setTimeout(()=> location.href = 'collaboratori.html', 500);
+function redirectByRole(role){
+  if(role === 'admin'){ return; }
+  redirectInProgress = true;
+  if(role === 'collaboratore'){
+    location.href = 'collaboratori.html';
     return;
   }
+  location.href = 'index.html';
+}
 
-  // regola #4: se credenziali predefinite admin/admin -> resta qui e apri impostazioni admin
-  const defaultAdmin = (u.username==='admin' && pass==='admin');
+function bindGoToApp(){
+  $('btn-go-app')?.addEventListener('click', ()=>{
+    const role = currentProfile?.role || 'user';
+    const target = role==='collaboratore' ? 'collaboratori.html' : 'index.html';
+    location.href = target;
+  });
+}
 
-  if(u.role==='admin'){
+async function handleLoginSuccess(profile, session, { silent = false } = {}){
+  currentProfile = profile;
+  persistSession(profile, session);
+  $('btn-go-app').style.display = 'inline-block';
+  manualRedirect = false;
+  const role = profile?.role || 'user';
+  if(role === 'admin'){
     $('admin-panel').style.display = '';
-    renderUsers(); renderAudit();
-    $('btn-go-app').style.display = defaultAdmin ? 'none' : 'inline-block';
-    if(!defaultAdmin){
-      // admin NON-default può entrare nell’app se vuole
-      setTimeout(()=> location.href = 'index.html', 600);
-    }
-  }else{
-    // utenti normali vanno direttamente all’app
-    $('btn-go-app').style.display = 'inline-block';
-    setTimeout(()=> location.href = 'index.html', 600);
+    await Promise.all([loadUsers(), refreshAudit()]);
+    if(!silent) showToast('Accesso admin effettuato');
+    redirectInProgress = false;
+    return;
   }
-});
+  redirectByRole(role);
+}
 
-/* ===== Aggiungi utente ===== */
-$('user-form')?.addEventListener('submit', async (e)=>{
-  e.preventDefault();
-  const uname = $('u-name').value.trim();
-  const pw = $('u-pass').value;
-  const role = $('u-role').value;
-  if(!uname || !pw) return;
-  const users = getUsers();
-  if(users.some(x=> x.username===uname)){ showToast('Utente già esistente'); return; }
-  const passHash = await sha256(SALT+pw);
-  users.push({ username:uname, role, passHash, createdAt:new Date().toISOString() });
-  setUsers(users);
-  $('u-name').value=''; $('u-pass').value='';
-  renderUsers();
-  audit('create', 'creato utente '+uname);
-  showToast('Utente creato');
-});
+async function resumeSession(){
+  try{
+    const { data:{ session } } = await supabase.auth.getSession();
+    if(!session?.user) return;
+    const profile = await fetchProfile(session.user.id);
+    if(!profile) return;
+    await handleLoginSuccess(profile, session, { silent: true });
+  }catch(err){ console.warn('resumeSession', err); }
+}
 
-/* ===== Pulsante “Apri l’app” ===== */
-$('btn-go-app')?.addEventListener('click', ()=>{
-  const sess = getSession();
-  const target = sess?.role === 'collaboratore' ? 'collaboratori.html' : 'index.html';
-  location.href = target;
-});
+async function loadUsers(){
+  const box = $('users-list');
+  if(!box) return;
+  try{
+    const { data, error } = await supabase
+      .from(PROFILES_TABLE)
+      .select('id,user_id,username,email,role,created_at')
+      .order('created_at',{ ascending:false });
+    if(error){ console.error('loadUsers', error); box.innerHTML = '<div class="muted">Errore caricamento utenti</div>'; return; }
+    if(!data?.length){ box.innerHTML = '<div class="muted">Nessun utente</div>'; return; }
+    box.innerHTML = data.map(u=>`
+      <div class="userrow" data-id="${u.id}" data-user-id="${u.user_id}" data-email="${u.email||''}">
+        <div><b>${resolveDisplayName(u)}</b> <span class="muted">(${u.role||'user'})</span></div>
+        <div><button class="btn btn-ghost" data-act="reset">Invia reset</button></div>
+        <div>
+          <select data-act="role">
+            <option value="user" ${u.role==='user'?'selected':''}>user</option>
+            <option value="admin" ${u.role==='admin'?'selected':''}>admin</option>
+            <option value="collaboratore" ${u.role==='collaboratore'?'selected':''}>collaboratore</option>
+          </select>
+        </div>
+        <div class="actions" style="justify-content:flex-end">
+          <button class="btn btn-danger" data-act="del" disabled title="Eliminazione richiede chiave service role">Elimina</button>
+        </div>
+      </div>
+    `).join('');
 
-/* ===== Boot ===== */
-(function boot(){
-  ensureDefaultAdmin();
+    box.querySelectorAll('[data-act="reset"]').forEach(btn=>{
+      btn.addEventListener('click', async ()=>{
+        const row = btn.closest('.userrow');
+        const email = row?.dataset.email;
+        if(!email){ showToast('Email non disponibile'); return; }
+        const { error } = await supabase.auth.resetPasswordForEmail(email, { redirectTo: location.origin + '/login.html' });
+        if(error){ showToast('Errore invio reset'); console.warn('reset', error); return; }
+        showToast('Email reset inviata');
+        await gcAudit('update', 'reset password inviato a '+email);
+      });
+    });
+
+    box.querySelectorAll('[data-act="role"]').forEach(sel=>{
+      sel.addEventListener('change', async ()=>{
+        const row = sel.closest('.userrow');
+        const id = row?.dataset.id;
+        const email = row?.dataset.email || resolveDisplayName({ username:'' });
+        const nextRole = sel.value;
+        const { error } = await supabase.from(PROFILES_TABLE).update({ role: nextRole }).eq('id', id);
+        if(error){ showToast('Errore aggiornamento ruolo'); console.warn('role update', error); return; }
+        showToast('Ruolo aggiornato');
+        await gcAudit('update', 'cambiato ruolo '+email+' -> '+nextRole);
+        loadUsers();
+      });
+    });
+  }catch(err){
+    console.error('loadUsers', err);
+  }
+}
+
+function renderAuditRows(){
+  const tbody = document.querySelector('#audit-table tbody');
+  if(!tbody){ return; }
+  const userFilter = $('filter-user')?.value || '';
+  const typeFilter = $('filter-type')?.value || '';
+  const filtered = auditCache.filter(row =>{
+    const okUser = userFilter ? row.user === userFilter : true;
+    const okType = typeFilter ? row.type === typeFilter : true;
+    return okUser && okType;
+  });
+  tbody.innerHTML = filtered.map(x=>`
+    <tr><td>${new Date(x.created_at || x.ts).toLocaleString()}</td><td>${x.user||'—'}</td><td>${x.type||'other'}</td><td>${x.detail||''}</td></tr>
+  `).join('') || '<tr><td colspan="4" class="muted">Nessuna voce</td></tr>';
+}
+
+function populateAuditFilters(){
+  const users = [...new Set(auditCache.map(x=>x.user).filter(Boolean))].sort();
+  const sel = $('filter-user');
+  if(sel){
+    const cur = sel.value;
+    sel.innerHTML = '<option value="">tutti gli utenti</option>' + users.map(u=>`<option value="${u}">${u}</option>`).join('');
+    if(users.includes(cur)) sel.value = cur;
+  }
+}
+
+async function refreshAudit(){
+  const tbody = document.querySelector('#audit-table tbody');
+  if(tbody){ tbody.innerHTML = '<tr><td colspan="4" class="muted">Caricamento…</td></tr>'; }
+  try{
+    const { data, error } = await supabase
+      .from(AUDIT_TABLE)
+      .select('id,created_at,user,user_id,type,detail')
+      .order('created_at',{ ascending:false })
+      .limit(200);
+    if(error){ console.warn('refreshAudit', error); auditCache = []; renderAuditRows(); return; }
+    auditCache = data || [];
+    populateAuditFilters();
+    renderAuditRows();
+  }catch(err){ console.warn('refreshAudit', err); }
+}
+
+function bindAuditControls(){
+  $('filter-user')?.addEventListener('change', renderAuditRows);
+  $('filter-type')?.addEventListener('change', renderAuditRows);
+  $('btn-clear-audit')?.addEventListener('click', async ()=>{
+    if(!confirm('Svuotare l’intero registro operazioni?')) return;
+    try{
+      const { error } = await supabase.from(AUDIT_TABLE).delete().neq('id', 0);
+      if(error){ showToast('Errore svuotamento registro'); console.warn('clear audit', error); return; }
+      auditCache = [];
+      renderAuditRows();
+      showToast('Registro svuotato');
+      await gcAudit('delete', 'registro audit svuotato', resolveDisplayName(currentProfile));
+    }catch(err){ console.warn('clear audit', err); }
+  });
+}
+
+function bindForms(){
+  $('login-form')?.addEventListener('submit', async (e)=>{
+    e.preventDefault();
+    const email = $('lg-user').value.trim();
+    const password = $('lg-pass').value;
+    if(!email || !password){ showToast('Inserisci email e password'); return; }
+    const submitBtn = e.submitter || $('login-form').querySelector('button[type="submit"]');
+    submitBtn?.setAttribute('disabled','disabled');
+    try{
+      manualRedirect = true;
+      const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+      if(error || !data?.user){ showToast('Credenziali non valide'); console.warn('login error', error); manualRedirect = false; return; }
+      const profile = await fetchProfile(data.user.id);
+      if(!profile){ showToast('Profilo non trovato'); manualRedirect = false; return; }
+      await gcAudit('login', 'accesso effettuato', resolveDisplayName(profile, email));
+      await handleLoginSuccess(profile, data.session);
+    }catch(err){
+      console.error('login', err);
+      showToast('Errore di accesso');
+      manualRedirect = false;
+    }finally{
+      submitBtn?.removeAttribute('disabled');
+    }
+  });
+
+  $('user-form')?.addEventListener('submit', async (e)=>{
+    e.preventDefault();
+    if(currentProfile?.role !== 'admin'){ showToast('Non autorizzato'); return; }
+    const email = $('u-name').value.trim();
+    const password = $('u-pass').value;
+    const role = $('u-role').value;
+    if(!email || !password){ showToast('Compila tutti i campi'); return; }
+    const submitBtn = $('user-form').querySelector('button[type="submit"]');
+    submitBtn?.setAttribute('disabled','disabled');
+    try{
+      const { data, error } = await supabase.auth.signUp({
+        email,
+        password,
+        options:{ data:{ role, username: email } }
+      });
+      if(error){ showToast('Errore creazione utente'); console.warn('signUp error', error); return; }
+      const userId = data?.user?.id;
+      if(userId){
+        await supabase.from(PROFILES_TABLE).upsert({ user_id:userId, username: email, email, role });
+        await gcAudit('create', 'creato utente '+email, resolveDisplayName(currentProfile));
+      }
+      $('u-name').value=''; $('u-pass').value='';
+      showToast('Utente creato');
+      await loadUsers();
+    }catch(err){
+      console.error('create user', err);
+      showToast('Errore creazione utente');
+    }finally{
+      submitBtn?.removeAttribute('disabled');
+    }
+  });
+}
+
+function initAuthListener(){
+  try{
+    supabase.auth.onAuthStateChange(async (event, session)=>{
+      if(event === 'SIGNED_IN'){
+        if(redirectInProgress){ return; }
+        if(manualRedirect){ manualRedirect = false; return; }
+        const userId = session?.user?.id;
+        if(!userId){ return; }
+        const profile = await fetchProfile(userId);
+        if(!profile){ return; }
+        await handleLoginSuccess(profile, session, { silent: true });
+        return;
+      }
+      if(event === 'SIGNED_OUT'){
+        localStorage.removeItem('gc_auth_user');
+        currentProfile = null;
+        manualRedirect = false;
+        if(!redirectInProgress && !location.pathname.toLowerCase().endsWith('login.html')){
+          redirectInProgress = true;
+          location.href = 'login.html';
+        }
+      }
+    });
+  }catch(err){ console.warn('initAuthListener', err); }
+}
+
+document.addEventListener('DOMContentLoaded', async ()=>{
   loadLogo();
-  const sess = getSession();
-  if(sess?.role==='admin'){ $('admin-panel').style.display=''; renderUsers(); renderAudit(); $('btn-go-app').style.display='inline-block'; }
-  else if(sess?.role==='collaboratore'){ $('btn-go-app').style.display='inline-block'; }
-})();
+  bindGoToApp();
+  bindForms();
+  bindAuditControls();
+  initAuthListener();
+  await resumeSession();
+});
+</script>
+<div id="sb-selfcheck" style="position:fixed;right:10px;bottom:10px;font:12px system-ui;background:#0f1a2c;color:#e8eef6;border:1px solid #1e2b45;border-radius:10px;padding:6px 10px;opacity:.85;z-index:9999"></div>
+<script>
+  (async()=>{
+    const el=document.getElementById('sb-selfcheck');
+    if(!el) return;
+    try{
+      if(typeof supabase==='undefined'){ el.textContent='Supabase ❌'; return; }
+      const { error } = await supabase.from('profiles').select('id').limit(1);
+      el.textContent = error ? 'Supabase ❌ connessione' : 'Supabase ✅ connesso';
+    }catch(_){
+      el.textContent='Supabase ❌ connessione';
+    }
+  })();
 </script>
 </body>
 </html>

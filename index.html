@@ -10217,117 +10217,194 @@ if (typeof showExpenseForm === 'function') {
 </script>
 <script>
 (function(){
-  const TICKET_INBOX_KEY = 'gc_ticket_inbox_v1';
-  const AUDIT_KEY = 'gc_audit_v1';
+  const INBOX_TABLE = 'tickets_inbox';
+  const TICKETS_TABLE = 'tickets';
+  const AUDIT_TABLE = 'audit_log';
   const $ = (id)=> document.getElementById(id);
+  const box = $('collab-inbox-list');
+  if(!box || typeof supabase === 'undefined'){ return; }
 
-  function readInbox(){ try{ return JSON.parse(localStorage.getItem(TICKET_INBOX_KEY)||'[]'); }catch{return []} }
-  function writeInbox(a){ localStorage.setItem(TICKET_INBOX_KEY, JSON.stringify(a)); }
+  let inboxCache = [];
+  let channel;
 
-  // TODO: collega questa a come salvi i ticket "ufficiali" nell’app
-  function addToOfficialTickets(t){
-    // Esempio: se hai un array globale state.tickets, spingi e salva
+  const notify = (msg)=>{ if(typeof window.showToast === 'function' && msg){ window.showToast(msg); } };
+
+  const escapeHtml = (str='')=> String(str)
+    .replace(/&/g,'&amp;')
+    .replace(/</g,'&lt;')
+    .replace(/>/g,'&gt;')
+    .replace(/"/g,'&quot;')
+    .replace(/'/g,'&#39;');
+
+  async function gcAudit(type, detail){
     try{
-      if(window.state && Array.isArray(window.state.tickets)){
-        window.state.tickets.unshift({
-          id: t.id,
-          title: t.title,
-          priority: t.priority,
-          customer: t.customer,
-          site: t.site,
-          category: t.category,
-          due: t.due,
-          eta: t.eta,
-          desc: t.desc,
-          createdBy: t.createdBy,
-          createdAt: t.ts,
-          source: 'collaboratore'
-        });
-        if (typeof window.saveState === 'function') window.saveState();
-      }
-    }catch(_){ }
-    try{
-      const list = JSON.parse(localStorage.getItem(AUDIT_KEY)||'[]');
-      list.unshift({ ts:new Date().toISOString(), user: (JSON.parse(localStorage.getItem('gc_auth_user')||'null')||{}).username||'operatore', type:'create', detail:'ticket da collaboratore: '+t.title });
-      localStorage.setItem(AUDIT_KEY, JSON.stringify(list));
-    }catch(_){ }
+      const { data:{ session } } = await supabase.auth.getSession();
+      await supabase.from(AUDIT_TABLE).insert({
+        type: type || 'other',
+        detail: detail || '',
+        user: session?.user?.user_metadata?.username || session?.user?.email || 'operatore',
+        user_id: session?.user?.id || null,
+        created_at: new Date().toISOString()
+      });
+    }catch(err){ console.warn('audit inbox', err); }
   }
 
   function render(){
-    const box = $('collab-inbox-list');
-    const arr = readInbox();
-    if(!box) return;
-    if(!arr.length){ box.innerHTML = '<div class="muted">Nessun ticket in arrivo</div>'; return; }
-    box.innerHTML = arr.map((t,i)=>`
-      <div class="item">
-        <div style="display:flex;justify-content:space-between;gap:.5rem;align-items:center">
-          <div><b>${t.title}</b> · <span class="pill">${t.priority}</span></div>
-          <small class="muted">${new Date(t.ts).toLocaleString()}</small>
+    if(!inboxCache.length){
+      box.innerHTML = '<div class="muted">Nessun ticket in arrivo</div>';
+      return;
+    }
+    box.innerHTML = inboxCache.map(t=>{
+      const rawDesc = t.description ?? t.desc ?? '';
+      const desc = escapeHtml(rawDesc).replace(/\n/g,'<br>');
+      return `
+        <div class="item" data-id="${t.id}">
+          <div style="display:flex;justify-content:space-between;gap:.5rem;align-items:center">
+            <div><b>${escapeHtml(t.title)}</b> · <span class="pill">${escapeHtml(t.priority || 'media')}</span></div>
+            <small class="muted">${t.created_at ? new Date(t.created_at).toLocaleString() : '—'}</small>
+          </div>
+          <div class="muted" style="margin:.2rem 0">Da: ${escapeHtml(t.created_by || 'sconosciuto')}${t.site ? ' · '+escapeHtml(t.site) : ''}${t.customer ? ' · '+escapeHtml(t.customer) : ''}</div>
+          <div>${desc || '<span class="muted">(nessuna descrizione)</span>'}</div>
+          <div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap">
+            <button class="btn btn-primary" data-act="accept" data-id="${t.id}">Aggiungi ai ticket</button>
+            <button class="btn btn-ghost" data-act="reject" data-id="${t.id}">Scarta</button>
+          </div>
         </div>
-        <div class="muted" style="margin:.2rem 0">Da: ${t.createdBy} ${t.site? '· '+t.site:''} ${t.customer? '· '+t.customer:''}</div>
-        <div>${(t.desc||'').replace(/\n/g,'<br>')}</div>
-        <div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap">
-          <button class="btn btn-primary" data-i="${i}" data-act="accept">Aggiungi ai ticket</button>
-          <button class="btn btn-ghost" data-i="${i}" data-act="reject">Scarta</button>
-        </div>
-      </div>
-    `).join('');
+      `;
+    }).join('');
 
-    box.querySelectorAll('[data-act="accept"]').forEach(b=>{
-      b.addEventListener('click', ()=>{
-        const i = +b.dataset.i; const arr = readInbox(); const t = arr[i];
-        addToOfficialTickets(t);
-        arr.splice(i,1); writeInbox(arr); render();
-      });
+    box.querySelectorAll('[data-act="accept"]').forEach(btn=>{
+      btn.addEventListener('click', ()=> acceptTicket(btn.dataset.id));
     });
-    box.querySelectorAll('[data-act="reject"]').forEach(b=>{
-      b.addEventListener('click', ()=>{
-        const i = +b.dataset.i; const arr = readInbox(); arr.splice(i,1); writeInbox(arr); render();
-      });
+    box.querySelectorAll('[data-act="reject"]').forEach(btn=>{
+      btn.addEventListener('click', ()=> rejectTicket(btn.dataset.id));
     });
   }
 
-  render();
+  function ticketById(id){
+    return inboxCache.find(t=> String(t.id) === String(id));
+  }
 
-  window.addEventListener('storage', (e)=>{
-    if(e.key === TICKET_INBOX_KEY) render();
+  async function acceptTicket(id){
+    const ticket = ticketById(id);
+    if(!ticket) return;
+    try{
+      const descriptionValue = ticket.description ?? ticket.desc ?? null;
+      const insertPayload = {
+        title: ticket.title,
+        priority: ticket.priority,
+        customer: ticket.customer,
+        site: ticket.site,
+        category: ticket.category,
+        due: ticket.due,
+        eta: ticket.eta,
+        description: descriptionValue,
+        desc: descriptionValue,
+        created_by: ticket.created_by,
+        created_by_id: ticket.created_by_id || null,
+        source: 'collaboratore',
+        created_at: ticket.created_at || new Date().toISOString()
+      };
+      const { error: insErr } = await supabase.from(TICKETS_TABLE).insert(insertPayload);
+      if(insErr){ notify('Errore aggiunta ticket'); console.warn('ticket insert', insErr); return; }
+      const { error: delErr } = await supabase.from(INBOX_TABLE).delete().eq('id', ticket.id);
+      if(delErr){ notify('Errore rimozione inbox'); console.warn('ticket delete', delErr); return; }
+      await gcAudit('create', 'ticket da collaboratore: '+(ticket.title||ticket.id));
+      notify('Ticket aggiunto');
+      await loadInbox();
+    }catch(err){
+      console.warn('acceptTicket', err);
+    }
+  }
+
+  async function rejectTicket(id){
+    const ticket = ticketById(id);
+    if(!ticket) return;
+    try{
+      const { error } = await supabase.from(INBOX_TABLE).delete().eq('id', ticket.id);
+      if(error){ notify('Errore rimozione'); console.warn('rejectTicket', error); return; }
+      await gcAudit('delete', 'ticket collaboratore scartato: '+(ticket.title||ticket.id));
+      await loadInbox();
+    }catch(err){
+      console.warn('rejectTicket', err);
+    }
+  }
+
+  async function loadInbox(){
+    box.innerHTML = '<div class="muted">Caricamento…</div>';
+    try{
+      const { data, error } = await supabase
+        .from(INBOX_TABLE)
+  .select('id,title,priority,customer,site,category,due,eta,description,desc,created_by,created_by_id,created_at,status')
+        .order('created_at',{ ascending:false });
+      if(error){ console.warn('loadInbox', error); box.innerHTML = '<div class="muted">Errore caricamento inbox</div>'; return; }
+      inboxCache = data || [];
+      render();
+    }catch(err){
+      console.warn('loadInbox', err);
+      box.innerHTML = '<div class="muted">Errore caricamento inbox</div>';
+    }
+  }
+
+  function initRealtime(){
+    try{
+      channel = supabase.channel('inbox-live');
+      channel.on('postgres_changes', { event:'*', schema:'public', table: INBOX_TABLE }, ()=> loadInbox());
+      channel.subscribe((status)=>{
+        if(status === 'SUBSCRIBED') loadInbox();
+      });
+    }catch(err){
+      console.warn('Realtime inbox error', err);
+      loadInbox();
+    }
+  }
+
+  document.addEventListener('visibilitychange', ()=>{
+    if(!document.hidden) loadInbox();
   });
 
-  setInterval(render, 5000);
+  initRealtime();
 })();
 </script>
 <script>
   (function(){
-    const AUDIT_KEY = 'gc_audit_v1';
-    function getAudit(){ try{ return JSON.parse(localStorage.getItem(AUDIT_KEY)||'[]'); }catch{return []} }
-    function setAudit(list){ localStorage.setItem(AUDIT_KEY, JSON.stringify(list)); }
-    window.gcAudit = function(type, detail){
+    const AUDIT_TABLE = 'audit_log';
+    window.gcAudit = async function(type, detail){
+      if(typeof supabase === 'undefined') return;
       try{
-        const sess = JSON.parse(localStorage.getItem('gc_auth_user')||'null');
-        const entry = {
-          ts: new Date().toISOString(),
-          user: sess?.username || 'sconosciuto',
+        const { data:{ session } } = await supabase.auth.getSession();
+        await supabase.from(AUDIT_TABLE).insert({
           type: type || 'other',
-          detail: detail || ''
-        };
-        const list = getAudit(); list.unshift(entry); setAudit(list);
-      }catch(_){ }
+          detail: detail || '',
+          user: session?.user?.user_metadata?.username || session?.user?.email || 'sconosciuto',
+          user_id: session?.user?.id || null,
+          created_at: new Date().toISOString()
+        });
+      }catch(err){ console.warn('gcAudit error', err); }
     };
-    window.addEventListener('beforeunload', function(){
+
+    window.addEventListener('beforeunload', ()=>{
       try{
         if(sessionStorage.getItem('gc_manual_logout')==='1'){
           sessionStorage.removeItem('gc_manual_logout');
           return;
         }
       }catch(_){ }
-      try{
-        const sess = JSON.parse(localStorage.getItem('gc_auth_user')||'null');
-        if(sess){
-          const list = getAudit();
-          list.unshift({ ts:new Date().toISOString(), user:sess.username, type:'logout', detail:'uscita pagina' });
-          setAudit(list);
-        }
-      }catch(_){ }
+      if(typeof supabase === 'undefined') return;
+      (async ()=>{
+        try{
+          const { data:{ session } } = await supabase.auth.getSession();
+          if(session?.user){
+            await supabase.from(AUDIT_TABLE).insert({
+              type:'logout',
+              detail:'uscita pagina',
+              user: session.user.user_metadata?.username || session.user.email || 'sconosciuto',
+              user_id: session.user.id,
+              created_at: new Date().toISOString()
+            });
+          }
+        }catch(_){ }
+      })();
     });
   })();
 </script>
@@ -10428,6 +10505,20 @@ if (typeof showExpenseForm === 'function') {
     }, true);
   }
 })();
+</script>
+<div id="sb-selfcheck" style="position:fixed;right:10px;bottom:10px;font:12px system-ui;background:#0f1a2c;color:#e8eef6;border:1px solid #1e2b45;border-radius:10px;padding:6px 10px;opacity:.85;z-index:9999"></div>
+<script>
+  (async()=>{
+    const el=document.getElementById('sb-selfcheck');
+    if(!el) return;
+    try{
+      if(typeof supabase==='undefined'){ el.textContent='Supabase ❌'; return; }
+      const { error } = await supabase.from('profiles').select('id').limit(1);
+      el.textContent = error ? 'Supabase ❌ connessione' : 'Supabase ✅ connesso';
+    }catch(_){
+      el.textContent='Supabase ❌ connessione';
+    }
+  })();
 </script>
 </body>
 </html>
